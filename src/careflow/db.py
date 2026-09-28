@@ -355,6 +355,50 @@ CREATE TABLE IF NOT EXISTS idempotency (
     created_at TEXT NOT NULL,
     PRIMARY KEY(scope,key)
 );
+CREATE TABLE IF NOT EXISTS emergency_access_requests (
+    id TEXT PRIMARY KEY,
+    clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    applicant_id TEXT NOT NULL REFERENCES staff(id),
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    patient_clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    clinical_reason TEXT NOT NULL,
+    sections_json TEXT NOT NULL,
+    granted_sections_json TEXT,
+    requested_minutes INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('requested','granted','denied','revoked','expired')),
+    idempotency_key TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    decided_by TEXT REFERENCES staff(id),
+    decided_at TEXT,
+    decision_note TEXT,
+    expires_at TEXT,
+    revoked_by TEXT REFERENCES staff(id),
+    revoked_at TEXT,
+    revoke_reason TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(clinic_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS emergency_access_state ON emergency_access_requests(clinic_id,state,requested_at);
+CREATE TABLE IF NOT EXISTS emergency_access_reads (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES emergency_access_requests(id),
+    section TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK(outcome IN ('granted','denied')),
+    denial_reason TEXT,
+    read_by TEXT NOT NULL REFERENCES staff(id),
+    read_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS emergency_access_reads_request ON emergency_access_reads(request_id,read_at);
+CREATE TABLE IF NOT EXISTS emergency_access_reviews (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES emergency_access_requests(id),
+    reviewer_id TEXT NOT NULL REFERENCES staff(id),
+    conclusion TEXT NOT NULL CHECK(conclusion IN ('confirmed','questioned')),
+    note TEXT NOT NULL,
+    reviewed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS emergency_access_reviews_request ON emergency_access_reviews(request_id,reviewed_at);
 CREATE TABLE IF NOT EXISTS audit_events (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,

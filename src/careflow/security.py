@@ -11,13 +11,15 @@ from .errors import Forbidden, NotFound, Unauthorized
 
 ROLE_PERMISSIONS = {
     "owner": {"clinic:manage", "staff:manage", "patient:read", "patient:write", "clinical:read", "clinical:write",
-              "consent:write", "appointment:write", "incident:manage", "audit:read", "billing:read", "export:read", "data:export"},
+              "consent:write", "appointment:write", "incident:manage", "audit:read", "billing:read", "export:read", "data:export",
+              "emergency:request", "emergency:decide", "emergency:revoke", "emergency:review"},
     "clinician": {"patient:read", "clinical:read", "clinical:write", "consent:read", "consent:write", "appointment:read",
-                  "appointment:write", "incident:report", "incident:manage", "followup:manage", "audit:patient"},
+                  "appointment:write", "incident:report", "incident:manage", "followup:manage", "audit:patient",
+                  "emergency:request", "emergency:decide"},
     "nurse": {"patient:read", "clinical:read", "clinical:write", "consent:read", "appointment:read", "appointment:write",
-              "incident:report", "incident:manage", "followup:manage", "audit:patient"},
+              "incident:report", "incident:manage", "followup:manage", "audit:patient", "emergency:request"},
     "coordinator": {"patient:read", "patient:write", "consent:read", "appointment:read", "appointment:write", "followup:manage"},
-    "auditor": {"audit:read", "patient:read", "clinical:read", "billing:read", "data:export"},
+    "auditor": {"audit:read", "patient:read", "clinical:read", "billing:read", "data:export", "emergency:review"},
 }
 
 

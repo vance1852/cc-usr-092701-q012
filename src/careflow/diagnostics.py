@@ -50,6 +50,8 @@ class ConsistencyChecker:
         self.check_incident_ledger()
         self.check_signed_records()
         self.check_duplicate_active_reservations()
+        self.check_emergency_access_review()
+        self.check_emergency_access_expiry_state()
         chain = audit.verify_chain(self.connection, self.clinic_id)
         if not chain["ok"]:
             self.add("audit.chain_mismatch", "critical", "clinic", self.clinic_id,
@@ -204,6 +206,36 @@ class ConsistencyChecker:
             self.add("encounter.signature_mismatch", "high", "encounter", row["id"],
                      {"patient_id": row["patient_id"], "state": row["state"], "signed_by": row["signed_by"],
                       "signed_at": row["signed_at"], "version": row["version"]}, "保留就诊原文并由临床负责人复核签署凭据。")
+
+    def check_emergency_access_review(self) -> None:
+        # 事后确认：已终结（被拒绝、已撤销、已过期或窗口已过）却缺少独立审计确认的访问。
+        # 不标记仍处于生效窗口内的授权——审计确认发生在访问结束之后。
+        rows = self.connection.execute(
+            "SELECT r.id,r.applicant_id,r.decided_by,r.state,r.requested_at,r.expires_at, "
+            "(SELECT COUNT(*) FROM emergency_access_reads rd WHERE rd.request_id=r.id) AS read_count "
+            "FROM emergency_access_requests r LEFT JOIN emergency_access_reviews rv ON rv.request_id=r.id "
+            "WHERE r.clinic_id=? AND rv.id IS NULL AND r.decided_by IS NOT NULL AND ("
+            "r.state IN ('denied','revoked','expired') OR (r.state='granted' AND r.expires_at<=?)) "
+            "ORDER BY r.requested_at,r.id",
+            (self.clinic_id, self.as_of)).fetchall()
+        for row in rows:
+            self.add("emergency_access.requires_review", "high", "emergency_access", row["id"],
+                     {"applicant_id": row["applicant_id"], "decided_by": row["decided_by"],
+                      "state": row["state"], "read_count": row["read_count"],
+                      "requested_at": row["requested_at"]},
+                     "由独立于申请人与批准人的审计员核对申请依据、授予范围、读取章节、到期与撤销原因后留下结论。")
+
+    def check_emergency_access_expiry_state(self) -> None:
+        # 已过到期时刻却仍停留在 granted 的授权（正常读取或重放会即时收敛，残留说明缺乏触发）。
+        rows = self.connection.execute(
+            "SELECT id,applicant_id,expires_at,version FROM emergency_access_requests "
+            "WHERE clinic_id=? AND state='granted' AND expires_at IS NOT NULL AND expires_at<=? ORDER BY expires_at,id",
+            (self.clinic_id, self.as_of)).fetchall()
+        for row in rows:
+            self.add("emergency_access.expiry_not_closed", "medium", "emergency_access", row["id"],
+                     {"applicant_id": row["applicant_id"], "expires_at": row["expires_at"],
+                      "version": row["version"]},
+                     "确认该短时授权在到期后未再被使用；下一次读取或重放会自动收敛为已过期。")
 
     def check_duplicate_active_reservations(self) -> None:
         rows = self.connection.execute(

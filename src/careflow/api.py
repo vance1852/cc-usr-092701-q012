@@ -233,6 +233,37 @@ def create_handler(app: Careflow):
                 return app.verify_audit(clinic_id, actor_id), 200
             if self.command == "GET" and segments == ["audit", "diagnostics"]:
                 return app.run_diagnostics(clinic_id, actor_id), 200
+            if self.command == "POST" and segments == ["emergency", "requests"]:
+                data = self.body()
+                return app.emergency.request_access(
+                    clinic_id, actor_id, data.get("patient_clinic_id", ""), data.get("patient_id", ""),
+                    data.get("clinical_reason", ""), data.get("sections", []),
+                    self.headers.get("Idempotency-Key", ""),
+                    lifetime_minutes=data.get("lifetime_minutes", 60)), 201
+            if self.command == "GET" and segments == ["emergency", "requests"]:
+                params = parse_qs(path.query)
+                return app.emergency.list_requests(clinic_id, actor_id,
+                                                    state=params.get("state", [None])[0],
+                                                    limit=int(params.get("limit", [100])[0])), 200
+            if len(segments) == 3 and segments[:2] == ["emergency", "requests"] and self.command == "GET":
+                return app.emergency.history(clinic_id, actor_id, segments[2]), 200
+            emergency_actions = {"decide": "decide", "read": "read_section", "revoke": "revoke", "review": "review"}
+            if (len(segments) == 4 and segments[:2] == ["emergency", "requests"]
+                    and self.command == "POST" and segments[3] in emergency_actions):
+                data = self.body()
+                request_id = segments[2]
+                action = emergency_actions[segments[3]]
+                if action == "decide":
+                    return app.emergency.decide(clinic_id, actor_id, request_id, data.get("approved", False),
+                                                note=data.get("note"),
+                                                granted_sections=data.get("granted_sections")), 200
+                if action == "read_section":
+                    return app.emergency.read_section(clinic_id, actor_id, request_id,
+                                                      data.get("section", "")), 200
+                if action == "revoke":
+                    return app.emergency.revoke(clinic_id, actor_id, request_id, data.get("reason", "")), 200
+                return app.emergency.review(clinic_id, actor_id, request_id,
+                                            data.get("conclusion", ""), data.get("note", "")), 201
             if self.command == "POST" and segments == ["products"]:
                 data = self.body()
                 return app.supplies.register_product(clinic_id, actor_id, data.get("name", ""),

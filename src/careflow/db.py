@@ -371,6 +371,73 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 CREATE INDEX IF NOT EXISTS audit_patient_sequence ON audit_events(patient_id,sequence);
 CREATE INDEX IF NOT EXISTS audit_aggregate ON audit_events(aggregate_type,aggregate_id,sequence);
+CREATE TABLE IF NOT EXISTS emergency_access_requests (
+    id TEXT PRIMARY KEY,
+    clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    requestor_id TEXT NOT NULL REFERENCES staff(id),
+    source_clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    clinical_reason TEXT NOT NULL,
+    requested_sections_json TEXT NOT NULL,
+    granted_sections_json TEXT,
+    ttl_minutes INTEGER NOT NULL CHECK(ttl_minutes BETWEEN 5 AND 120),
+    granted_ttl_minutes INTEGER CHECK(granted_ttl_minutes IS NULL OR granted_ttl_minutes BETWEEN 5 AND 120),
+    state TEXT NOT NULL CHECK(state IN ('requested','active','denied','expired','revoked')),
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    approver_id TEXT REFERENCES staff(id),
+    approval_note TEXT,
+    grant_started_at TEXT,
+    grant_expires_at TEXT,
+    revoked_at TEXT,
+    revoked_by TEXT REFERENCES staff(id),
+    revocation_reason TEXT,
+    version INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS emergency_requests_clinic_state ON emergency_access_requests(clinic_id,state,created_at);
+CREATE INDEX IF NOT EXISTS emergency_requests_requestor ON emergency_access_requests(requestor_id,state);
+CREATE TABLE IF NOT EXISTS emergency_access_reads (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES emergency_access_requests(id),
+    clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    source_clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    reader_id TEXT NOT NULL REFERENCES staff(id),
+    section TEXT NOT NULL,
+    accessed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS emergency_reads_request ON emergency_access_reads(request_id,accessed_at);
+CREATE TABLE IF NOT EXISTS emergency_access_reviews (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES emergency_access_requests(id),
+    clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    reviewer_id TEXT NOT NULL REFERENCES staff(id),
+    conclusion TEXT NOT NULL CHECK(conclusion IN ('appropriate','inappropriate')),
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(request_id,reviewer_id)
+);
+CREATE INDEX IF NOT EXISTS emergency_reviews_request ON emergency_access_reviews(request_id,created_at);
+CREATE TRIGGER IF NOT EXISTS emergency_reads_no_update BEFORE UPDATE ON emergency_access_reads
+BEGIN
+    SELECT RAISE(ABORT,'emergency read trail is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS emergency_reads_no_delete BEFORE DELETE ON emergency_access_reads
+BEGIN
+    SELECT RAISE(ABORT,'emergency read trail is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS emergency_reviews_no_update BEFORE UPDATE ON emergency_access_reviews
+BEGIN
+    SELECT RAISE(ABORT,'emergency review trail is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS emergency_reviews_no_delete BEFORE DELETE ON emergency_access_reviews
+BEGIN
+    SELECT RAISE(ABORT,'emergency review trail is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS emergency_requests_no_delete BEFORE DELETE ON emergency_access_requests
+BEGIN
+    SELECT RAISE(ABORT,'emergency access requests are retained permanently');
+END;
 """
 
 

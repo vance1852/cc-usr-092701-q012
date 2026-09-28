@@ -283,6 +283,39 @@ def create_handler(app: Careflow):
                 data = self.body()
                 return app.void_encounter(clinic_id, actor_id, segments[1], data.get("expected_version", 0),
                                           data.get("reason", "")), 200
+            if self.command == "POST" and segments == ["emergency-access", "requests"]:
+                data = self.body()
+                return app.emergency.request_access(clinic_id, actor_id, data.get("source_clinic_id", ""),
+                                                     data.get("patient_id", ""), data.get("clinical_reason", ""),
+                                                     data.get("sections", []), data.get("ttl_minutes", 0),
+                                                     self.headers.get("Idempotency-Key", "")), 201
+            if self.command == "GET" and segments == ["emergency-access", "requests"]:
+                params = parse_qs(path.query)
+                return {"items": app.emergency.list_requests(clinic_id, actor_id,
+                                                              state=params.get("state", [None])[0])}, 200
+            if self.command == "POST" and segments == ["emergency-access", "sweep-expired"]:
+                data = self.body()
+                return app.emergency.sweep_expired(clinic_id, actor_id,
+                                                   limit=data.get("limit", 200)), 200
+            if self.command == "GET" and len(segments) == 3 and segments[:2] == ["emergency-access", "requests"]:
+                return app.emergency.request_detail(clinic_id, actor_id, segments[2]), 200
+            if self.command == "POST" and len(segments) == 4 and segments[:2] == ["emergency-access", "requests"]:
+                data = self.body()
+                request_id, action_name = segments[2], segments[3]
+                if action_name == "decide":
+                    return app.emergency.decide(clinic_id, actor_id, request_id, data.get("decision", ""),
+                                                expected_version=data.get("expected_version", 0),
+                                                note=data.get("note"),
+                                                granted_sections=data.get("granted_sections"),
+                                                granted_ttl_minutes=data.get("granted_ttl_minutes")), 200
+                if action_name == "read":
+                    return app.emergency.read_section(clinic_id, actor_id, request_id, data.get("section", "")), 200
+                if action_name == "revoke":
+                    return app.emergency.revoke(clinic_id, actor_id, request_id, data.get("reason", ""),
+                                                expected_version=data.get("expected_version")), 200
+                if action_name == "review":
+                    return app.emergency.review(clinic_id, actor_id, request_id,
+                                                data.get("conclusion", ""), data.get("note", "")), 200
             return {"error": {"code": "not_found", "message": "接口不存在"}}, 404
 
     return Handler

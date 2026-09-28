@@ -37,11 +37,13 @@ class Careflow:
         from .exports import PatientExportService
         from .milestones import MilestoneService
         from .clinical_flags import ClinicalFlagService
+        from .emergency_access import EmergencyAccessService
         self.supplies = SupplyService(self.db, self.clock)
         self.reports = ReportService(self.db, self.clock)
         self.exports = PatientExportService(self.db, self.clock)
         self.milestones = MilestoneService(self.db, self.clock)
         self.clinical_flags = ClinicalFlagService(self.db, self.clock)
+        self.emergency = EmergencyAccessService(self.db, self.clock)
 
     def now(self) -> str:
         return timestamp(self.clock.now())
@@ -203,9 +205,12 @@ class Careflow:
                 if others <= 1:
                     raise Conflict("诊所必须保留至少一位负责人")
             connection.execute("UPDATE staff SET active=0,version=version+1 WHERE id=?", (staff_id,))
+            revoked_emergency = self.emergency.revoke_for_disabled_staff(
+                connection, clinic_id, staff_id, actor_id, now)
             audit.append_event(connection, clinic_id=clinic_id, actor_id=actor_id, patient_id=None,
                                aggregate_type="staff", aggregate_id=staff_id, action="staff.disabled",
-                               occurred_at=now, payload={"previous_role": target["role"]})
+                               occurred_at=now, payload={"previous_role": target["role"],
+                                                         "emergency_access_revoked": revoked_emergency})
         return {"id": staff_id, "active": False, "version": expected_version + 1}
 
     def create_patient(self, clinic_id: str, actor_id: str, external_ref: str, name: str,
